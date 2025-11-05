@@ -6,20 +6,23 @@ MindFlow 是一个基于 Java + Spring Boot 的分布式 AI 工作流平台，�
 
 ```
 mindflow/
-├── mindflow-common/          # 通用模块（DTO、实体、工具类）
-├── mindflow-plugin/          # 插件模块（SPI 机制和任务执行器）
-├── mindflow-orchestrator/    # 任务编排与调度中心（独立微服务）
-├── mindflow-worker/          # 任务执行节点（独立微服务）
-├── mindflow-api/             # REST API 接口（独立微服务）
-└── mindflow-dashboard/       # Vue 前端项目
+├── mindflow-common/              # 通用模块（DTO、实体、工具类）
+├── mindflow-plugin/              # 插件模块（SPI 机制和任务执行器）
+├── mindflow-orchestrator/        # 任务编排与调度中心（独立微服务）
+├── mindflow-worker/              # 任务执行节点（独立微服务）
+├── mindflow-api/                 # REST API 接口（独立微服务）
+└── mindflow-dashboard-react/     # React 前端项目 (Flowise 风格)
 ```
 
 ## 核心功能
 
 ### ✅ 工作流管理
+- **可视化工作流设计器**：拖拽式创建工作流
 - 创建、编辑、删除工作流定义
-- JSON 配置工作流节点和边
-- 支持多种节点类型（AI、HTTP、Email）
+- 支持可视化模式和 JSON 模式切换
+- 支持多种节点类型（AI、HTTP、Start、End）
+- 节点配置面板实时编辑参数
+- 自动布局、画布缩放、小地图导航
 
 ### ✅ 实时执行监控
 - **WebSocket 实时推送**状态更新（不使用轮询）
@@ -35,10 +38,49 @@ mindflow/
 - Kafka UI 实时监控消息队列
 - 查看主题、消费者组、消息内容
 
+## 🎨 可视化工作流设计器
+
+### 🆕 Flowise 风格界面 (2025.11.05)
+
+**全新设计**：采用 [Flowise](https://github.com/FlowiseAI/Flowise) 的现代化 UI 风格！
+
+**主要改进**：
+- 🎨 **Flowise 配色方案**：主色 #2196f3（蓝色）、辅助色 #673ab7（紫色）
+- 🔍 **节点搜索**：实时搜索节点，快速找到所需组件
+- 📁 **分类折叠面板**：节点按类别（基础、AI、工具）组织展示
+- 💎 **精致节点设计**：统一 300px 宽度，微妙阴影，Flowise 风格配色
+- 🎯 **连接状态可视化**：
+  - ✅ 可连接：绿色 (#00e676)
+  - ❌ 不可连接：红色 (#f44336)
+- 🎭 **优化的控件样式**：更清爽的 Vue Flow 控制按钮和小地图
+
+详细更新内容请查看：[Flowise 风格实现说明](FLOWISE_STYLE_IMPLEMENTATION.md)
+
+### 特性
+- **拖拽式创建节点**：从左侧面板拖拽节点到画布
+- **可视化连线**：鼠标拖拽创建节点之间的连接
+- **实时配置**：点击节点即可在右侧面板编辑参数
+- **工具栏功能**：
+  - 🔍 画布缩放和平移
+  - 📐 适应视图
+  - 🗑️ 清空画布
+  - 🎨 自动布局
+  - ✨ 添加示例工作流
+- **小地图导航**：快速定位和浏览大型工作流
+- **模式切换**：可视化编辑 ↔️ JSON 编辑无缝切换
+
+### 支持的节点类型
+- ▶️ **开始节点**：工作流入口
+- 🌐 **HTTP 节点**：发送 HTTP 请求（GET/POST/PUT/DELETE）
+- 🤖 **AI 节点**：调用 OpenAI GPT 模型
+- ⏹️ **结束节点**：工作流出口
+
+详细使用指南请查看：[工作流实例管理指南](mindflow-dashboard-react/WORKFLOW_INSTANCES_GUIDE.md)
+
 ## 技术栈
 
 - **后端**: Spring Boot 3.2.0, JPA, Kafka, Redis, MySQL, WebSocket
-- **前端**: Vue 3, Axios, Element Plus, SockJS, STOMP
+- **前端**: React 18, React Flow, Material-UI, React Router, Axios
 - **认证**: JWT
 - **消息队列**: Apache Kafka 7.4.0
 - **数据库**: MySQL 8.0, Redis 7
@@ -92,14 +134,18 @@ mvn spring-boot:run
 
 ### 5. 启动前端
 
-**终端 4 - 启动前端**
+**终端 4 - 启动前端 (React)**
 ```bash
-cd mindflow-dashboard
+cd mindflow-dashboard-react
 npm install
 npm run dev
 ```
 
-前端访问地址：http://localhost:3000
+前端访问地址：http://localhost:5173
+
+**默认登录账号：**
+- 用户名：`admin`
+- 密码：`admin123`
 
 ## API 接口
 

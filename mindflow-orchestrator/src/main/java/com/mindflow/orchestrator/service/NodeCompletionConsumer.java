@@ -100,6 +100,14 @@ public class NodeCompletionConsumer {
             
             logger.info("当前节点 {} 的下一个节点列表: {}", nodeInstance.getNodeId(), nextNodeIds);
 
+            // 性能优化：一次性查询所有节点实例，避免多次数据库查询
+            List<NodeInstance> allNodeInstances = nodeInstanceRepository.findByWorkflowInstanceId(workflowInstanceId);
+            Map<String, NodeInstance> nodeInstanceMap = new HashMap<>();
+            for (NodeInstance ni : allNodeInstances) {
+                nodeInstanceMap.put(ni.getNodeId(), ni);
+            }
+            logger.debug("已加载工作流实例的所有节点: {}", nodeInstanceMap.keySet());
+
             // 检查每个下一个节点的依赖是否都完成
             for (String nextNodeId : nextNodeIds) {
                 logger.info("开始检查下一个节点 {} 的依赖", nextNodeId);
@@ -109,20 +117,27 @@ public class NodeCompletionConsumer {
                     for (WorkflowDefinitionDTO.EdgeConfig edge : config.getEdges()) {
                         if (edge.getTarget().equals(nextNodeId)) {
                             dependencies.add(edge.getSource());
-                            NodeInstance dependencyNode = nodeInstanceRepository
-                                    .findByWorkflowInstanceId(workflowInstanceId)
-                                    .stream()
-                                    .filter(n -> n.getNodeId().equals(edge.getSource()))
-                                    .findFirst()
-                                    .orElse(null);
-                            if (dependencyNode == null) {
-                                logger.warn("未找到依赖节点实例: {}", edge.getSource());
-                                allDependenciesCompleted = false;
-                                break;
+                            
+                            // 如果依赖节点是当前完成的节点，直接使用消息中的状态
+                            String dependencyStatus;
+                            if (edge.getSource().equals(nodeId)) {
+                                dependencyStatus = status;
+                                logger.info("依赖节点 {} 是当前完成的节点，使用消息中的状态: {}", 
+                                        edge.getSource(), status);
+                            } else {
+                                // 否则从缓存的 Map 中获取（已经从数据库查询）
+                                NodeInstance dependencyNode = nodeInstanceMap.get(edge.getSource());
+                                if (dependencyNode == null) {
+                                    logger.warn("未找到依赖节点实例: {}", edge.getSource());
+                                    allDependenciesCompleted = false;
+                                    break;
+                                }
+                                dependencyStatus = dependencyNode.getStatus();
+                                logger.info("依赖节点 {} 的状态（从数据库）: {}", edge.getSource(), dependencyStatus);
                             }
-                            logger.info("依赖节点 {} 的状态: {}", edge.getSource(), dependencyNode.getStatus());
-                            if (!"SUCCESS".equals(dependencyNode.getStatus())) {
-                                logger.info("依赖节点 {} 尚未成功完成，状态: {}", edge.getSource(), dependencyNode.getStatus());
+                            
+                            if (!"SUCCESS".equals(dependencyStatus)) {
+                                logger.info("依赖节点 {} 尚未成功完成，状态: {}", edge.getSource(), dependencyStatus);
                                 allDependenciesCompleted = false;
                                 break;
                             }
@@ -134,20 +149,13 @@ public class NodeCompletionConsumer {
 
                 if (allDependenciesCompleted) {
                     logger.info("节点 {} 的所有依赖已完成，准备推送任务", nextNodeId);
-                    // 推送下一个节点
-                    NodeInstance nextNodeInstance = nodeInstanceRepository
-                            .findByWorkflowInstanceId(workflowInstanceId)
-                            .stream()
-                            .filter(n -> n.getNodeId().equals(nextNodeId))
-                            .findFirst()
-                            .orElse(null);
+                    // 推送下一个节点（从缓存的 Map 中获取）
+                    NodeInstance nextNodeInstance = nodeInstanceMap.get(nextNodeId);
 
                     if (nextNodeInstance == null) {
                         logger.error("未找到下一个节点实例: nodeId={}, workflowInstanceId={}", nextNodeId, workflowInstanceId);
                         // 打印所有节点实例供调试
-                        List<NodeInstance> allNodeInstances = nodeInstanceRepository.findByWorkflowInstanceId(workflowInstanceId);
-                        logger.error("当前工作流实例的所有节点: {}", 
-                                allNodeInstances.stream().map(NodeInstance::getNodeId).toList());
+                        logger.error("当前工作流实例的所有节点: {}", nodeInstanceMap.keySet());
                         continue;
                     }
 
@@ -206,11 +214,21 @@ public class NodeCompletionConsumer {
                 logger.info("节点 {} 没有后续节点，可能是结束节点", nodeInstance.getNodeId());
             }
 
-            // 检查工作流状态
-            List<NodeInstance> allNodes = nodeInstanceRepository.findByWorkflowInstanceId(workflowInstanceId);
+            // 检查工作流状态（复用前面已查询的 allNodeInstances）
+            // 特殊处理：当前完成的节点状态需要使用 Kafka 消息中的状态（避免数据库事务未提交问题）
+            Map<String, String> nodeStatusMap = new HashMap<>();
+            for (NodeInstance node : allNodeInstances) {
+                // 如果是当前完成的节点，使用消息中的状态
+                if (node.getNodeId().equals(nodeId)) {
+                    nodeStatusMap.put(node.getNodeId(), status);
+                    logger.debug("节点 {} 使用消息中的状态: {}", node.getNodeId(), status);
+                } else {
+                    nodeStatusMap.put(node.getNodeId(), node.getStatus());
+                }
+            }
             
             // 如果有节点失败，立即标记工作流失败
-            boolean hasFailedNode = allNodes.stream().anyMatch(n -> "FAILED".equals(n.getStatus()));
+            boolean hasFailedNode = nodeStatusMap.values().stream().anyMatch(s -> "FAILED".equals(s));
             if (hasFailedNode && !"FAILED".equals(workflowInstance.getStatus())) {
                 workflowInstance.setStatus("FAILED");
                 workflowInstance.setEndTime(java.time.LocalDateTime.now());
@@ -223,12 +241,13 @@ public class NodeCompletionConsumer {
                 return; // 不再处理后续节点
             }
             
-            // 检查工作流是否全部完成
-            boolean allCompleted = allNodes.stream()
-                    .allMatch(n -> "SUCCESS".equals(n.getStatus()) || "FAILED".equals(n.getStatus()));
+            // 检查工作流是否全部完成（使用包含最新状态的 Map）
+            boolean allCompleted = nodeStatusMap.values().stream()
+                    .allMatch(s -> "SUCCESS".equals(s) || "FAILED".equals(s));
 
             if (allCompleted) {
-                boolean allSuccess = allNodes.stream().allMatch(n -> "SUCCESS".equals(n.getStatus()));
+                // 使用 nodeStatusMap 判断是否全部成功（包含当前节点的最新状态）
+                boolean allSuccess = nodeStatusMap.values().stream().allMatch(s -> "SUCCESS".equals(s));
                 String finalStatus = allSuccess ? "SUCCESS" : "FAILED";
                 workflowInstance.setStatus(finalStatus);
                 workflowInstance.setEndTime(java.time.LocalDateTime.now());
@@ -236,9 +255,11 @@ public class NodeCompletionConsumer {
                 
                 // 发送状态更新通知
                 broadcastStatusUpdate(workflowInstanceId, finalStatus, "工作流执行完成");
-                logger.info("工作流完成: workflowInstanceId={}, status={}", workflowInstanceId, finalStatus);
+                logger.info("工作流完成: workflowInstanceId={}, status={}, 节点状态: {}", 
+                        workflowInstanceId, finalStatus, nodeStatusMap);
             } else {
                 // 发送节点状态更新通知
+                logger.debug("工作流尚未完成，节点状态: {}", nodeStatusMap);
                 broadcastStatusUpdate(workflowInstanceId, "RUNNING", "节点执行进度更新");
             }
 

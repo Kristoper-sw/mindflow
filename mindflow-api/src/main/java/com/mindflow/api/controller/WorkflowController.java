@@ -110,6 +110,25 @@ public class WorkflowController {
         return ResponseEntity.ok(dto);
     }
 
+    @DeleteMapping("/definitions/{id}")
+    public ResponseEntity<Void> deleteWorkflowDefinition(@PathVariable("id") Long id) {
+        WorkflowDefinition definition = workflowDefinitionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("工作流定义不存在"));
+        
+        // 检查是否有关联的工作流实例
+        List<WorkflowInstance> instances = workflowInstanceRepository.findByWorkflowDefinitionId(id);
+        if (!instances.isEmpty()) {
+            // 可选：删除所有关联的实例（谨慎操作）
+            // 或者：不允许删除有实例的定义
+            throw new RuntimeException("无法删除该工作流定义，存在 " + instances.size() + " 个关联的工作流实例");
+        }
+        
+        // 删除工作流定义
+        workflowDefinitionRepository.delete(definition);
+        
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/instances")
     public ResponseEntity<WorkflowInstanceDTO> createWorkflowInstance(
             @RequestParam(value = "workflowDefinitionId", required = false) Long workflowDefinitionId,

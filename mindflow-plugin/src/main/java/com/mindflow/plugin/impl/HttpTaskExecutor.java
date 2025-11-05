@@ -31,8 +31,13 @@ public class HttpTaskExecutor implements TaskExecutor {
         Map<String, Object> nodeConfig = taskMessage.getNodeConfig();
         String url = nodeConfig != null ? (String) nodeConfig.get("url") : null;
         String method = nodeConfig != null ? (String) nodeConfig.get("method") : "GET";
-        Map<String, String> headers = nodeConfig != null ? 
-            (Map<String, String>) nodeConfig.get("headers") : new HashMap<>();
+        Map<String, String> headers = new HashMap<>();
+        Object headersObj = nodeConfig != null ? nodeConfig.get("headers") : null;
+
+        if (headersObj instanceof Map) {
+            headers.putAll((Map<String, String>) headersObj);
+        }
+
         Object body = nodeConfig != null ? nodeConfig.get("body") : null;
         
         if (url == null) {
