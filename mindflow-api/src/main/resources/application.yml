@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: mindflow-api
+  datasource:
+    url: jdbc:mysql://localhost:3306/mindflow?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 
+      timeout: 3000ms
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: latest
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.mindflow: DEBUG
+    org.springframework.kafka: INFO
+
+# 解决参数名称问题
+# 保留参数名称信息，避免 @PathVariable 和 @RequestParam 必须显式指定名称
+# 编译时需要添加 -parameters 参数
